@@ -1,0 +1,24 @@
+)ATTR DEFAULT(%+_)
+)BODY
+%XMITMGR HELP -------------------------------- z/OS 3.2
+%Command ===>_ZCMD                                            +
+%
++XMIT Manager works on TSO TRANSMIT data sets. Those files
++are 80-byte card images. Segments inside the cards build
++INMR01, INMR02, INMR03, and INMR06 control records.
+%
++Create runs TRANSMIT with OUTDATASET, so nothing is sent
++across the network. Extract runs RECEIVE with INDATASET.
++The replies RECEIVE expects are stacked by the dialog.
+%
++View never calls RECEIVE. It decodes text units and, for a
++PDS, the IEBCOPY directory. Restore with Extract when you
++need the original data set rather than a listing.
+%
++List line commands are V, E, T, H, and D. D issues DELETE
++after the confirm panel. FIND on the list locates a name.
+%
++PF3 or END leaves the current panel.
+)INIT
+ .CURSOR = ZCMD
+)END

@@ -1,0 +1,20 @@
+)ATTR DEFAULT(%+_)
+ @ TYPE(INPUT) INTENS(HIGH) CAPS(ON) COLOR(YELLOW)
+)BODY
+%XMITMGR OPTIONS --------------------------- profile
+%Command ===>@ZCMD                                            +
+%
++Default node   %===>@XMTNODE +
++Default userid %===>@XMTUSER +
++Replace        %===>@XMTREPL+  YES or NO
+%
++Panel library  %===>@XMTPLIB                                 +
++Message library%===>@XMTMLIB                                 +
+%
++Names are saved in the ISPF profile. Blank libraries mean
++userid.XMITMGR.PANELS and userid.XMITMGR.MSGS after restart.
++ENTER+saves. PF3=Cancel
+)INIT
+ .HELP = XMITHELP
+ .CURSOR = XMTNODE
+)END

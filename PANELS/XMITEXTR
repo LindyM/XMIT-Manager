@@ -1,0 +1,17 @@
+)ATTR DEFAULT(%+_)
+ @ TYPE(INPUT) INTENS(HIGH) CAPS(ON) COLOR(YELLOW)
+)BODY
+%XMITMGR EXTRACT ---- RECEIVE INDATASET -------- z/OS 3.2
+%Command ===>@ZCMD                                            +
+%
++XMIT data set %===>@ZDSN                                     +
++Target data set%===>@ZTARG                                   +
++Member        %===>@ZMEMB   +  blank = the whole data set
++Replace       %===>@ZREPL+  YES replaces an existing target
+%
++A member is copied after RECEIVE restores a temporary PDS.
++ENTER+runs RECEIVE. PF3=Cancel
+)INIT
+ .HELP = XMITHELP
+ .CURSOR = ZTARG
+)END

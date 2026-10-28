@@ -1,0 +1,16 @@
+//XMITSEND JOB (ACCT),'XMIT SEND',CLASS=A,MSGCLASS=H,
+//             NOTIFY=&SYSUID
+//* Build an XMIT without sending it across NJE.
+//* Set NODE, USER, the source data set, and the output XMIT.
+//TRANSMIT EXEC PGM=IKJEFT01,DYNAMNBR=50
+//SYSTSPRT DD SYSOUT=*
+//SYSTSIN  DD *
+  TRANSMIT NODE01.IBMUSER -
+    DATASET('IBMUSER.SOURCE.PDS') -
+    MEMBERS(MEM1,MEM2) -
+    OUTDATASET('IBMUSER.SOURCE.XMIT') -
+    NOLOG NONOTIFY
+/*
+//* Omit MEMBERS to transmit every member.
+//* Add SEQ or PDS after the data set when TRANSMIT should
+//* not decide the organization itself.

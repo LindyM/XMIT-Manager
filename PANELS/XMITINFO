@@ -1,0 +1,37 @@
+)ATTR DEFAULT(%+_)
+ @ TYPE(INPUT) INTENS(HIGH) CAPS(ON) COLOR(YELLOW)
+ ~ TYPE(PS)
+)BODY
+%XMITMGR VIEW ---- &ZHEAD
+%Command ===>@ZCMD                        +
++
++Origin   &XFROM
++Target   &XTO
++Time     &XTIME
++Files    &XNUMF
++Cards    &XBYTES
++Utility  &XUTIL
++Data set &XDSN
++Format   &XFMT
++Size     &XSIZE
++Members  &XMCNT
++Name     TTR      VV.MM Created    User
++&XL1
++&XL2
++&XL3
++&XL4
++&XL5
++&XL6
++Text     &XTEXT
++
++Select ~Controls+ ~Members+ ~Text+ ~Hex+ ~Extract+
+)INIT
+ .HELP = XMITHELP
+ .CURSOR = ZCMD
+)PNTS
+ FIELD(ZPS00001) VAR(ZCMD) VAL(C)
+ FIELD(ZPS00002) VAR(ZCMD) VAL(M)
+ FIELD(ZPS00003) VAR(ZCMD) VAL(T)
+ FIELD(ZPS00004) VAR(ZCMD) VAL(H)
+ FIELD(ZPS00005) VAR(ZCMD) VAL(E)
+)END

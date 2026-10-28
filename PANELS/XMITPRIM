@@ -1,0 +1,25 @@
+)ATTR DEFAULT(%+_)
+ @ TYPE(INPUT) INTENS(HIGH) CAPS(ON) COLOR(YELLOW)
+)BODY
+%XMITMGR ----------- XMIT Manager ------------ z/OS 3.2
+%Command ===>@ZCMD                                            +
+%
+%  1+ List     - Catalog, view, and delete XMIT data sets
+%  2+ Create   - TRANSMIT a data set into an OUTDATASET
+%  3+ View     - Control records, members, and text
+%  4+ Extract  - RECEIVE a data set or one member
+%  5+ Options  - Node, userid, replace, libraries
+%
++XMIT data set%===>@ZDSN                                      +
++To node      %===>@ZNODE  +Userid%===>@ZUSER     +
+%
++ENTER+runs the option. PF1=Help  PF3=Exit
+)INIT
+ .HELP = XMITHELP
+ .CURSOR = ZCMD
+)PROC
+ IF (&ZNODE NE '')
+   VER (&ZNODE,NAME)
+ IF (&ZUSER NE '')
+   VER (&ZUSER,NAME)
+)END

@@ -1,0 +1,26 @@
+)ATTR DEFAULT(%+_)
+ @ TYPE(INPUT) INTENS(HIGH) CAPS(ON) COLOR(YELLOW)
+)BODY
+%XMITMGR CREATE ---- TRANSMIT OUTDATASET ------- z/OS 3.2
+%Command ===>@ZCMD                                            +
+%
++Source data set%===>@ZINDSN                                  +
++Members       %===>@ZMEMB                                    +
++  blank or * = every member. Example:%MEM1,MEM2
++Organization  %===>@ZORG +  SEQ, PDS, or blank
++Edit source   %===>@ZEDIT+  YES opens ISPF EDIT first
+%
++XMIT data set %===>@ZOUTDSN                                  +
++Replace       %===>@ZREPL+  YES deletes an existing XMIT
++To node       %===>@ZNODE  +Userid%===>@ZUSER     +
+%
++ENTER+runs TRANSMIT. PF3=Cancel
+)INIT
+ .HELP = XMITHELP
+ .CURSOR = ZINDSN
+)PROC
+ IF (&ZINDSN NE '')
+   VER (&ZINDSN,DSNAME)
+ IF (&ZOUTDSN NE '')
+   VER (&ZOUTDSN,DSNAME)
+)END

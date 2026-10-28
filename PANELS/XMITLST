@@ -1,0 +1,22 @@
+)ATTR DEFAULT(%+_)
+ @ TYPE(INPUT) INTENS(HIGH) CAPS(ON) COLOR(YELLOW)
+ | TYPE(OUTPUT) INTENS(LOW) COLOR(GREEN) JUST(LEFT)
+ ~ TYPE(PS)
+)BODY
+%XMITMGR LIST -- &ZHEAD
+%Command ===>@ZCMD                      %Scroll ===>@ZAMT    +
++Select ~View+ ~Extract+ ~Text+ ~Hex+ or type V E T H D
++Commands: FIND text, REFRESH, CREATE, END
+%Cmd Data set
+)MODEL
+@XSEL|XSHOW                                                               %
+)INIT
+ .HELP = XMITHELP
+ .CURSOR = ZCMD
+ &ZAMT = PAGE
+)PNTS
+ FIELD(ZPS00001) VAR(ZCMD) VAL(V)
+ FIELD(ZPS00002) VAR(ZCMD) VAL(E)
+ FIELD(ZPS00003) VAR(ZCMD) VAL(T)
+ FIELD(ZPS00004) VAR(ZCMD) VAL(H)
+)END

@@ -1,0 +1,15 @@
+)ATTR DEFAULT(%+_)
+ @ TYPE(INPUT) INTENS(HIGH) CAPS(ON) COLOR(YELLOW)
+ | TYPE(OUTPUT) INTENS(LOW) COLOR(GREEN) JUST(LEFT)
+)BODY
+%XMITMGR MEMBERS -- &ZHEAD
+%Command ===>@ZCMD                      %Scroll ===>@ZAMT    +
++Line:%V+browse the member text, when View was able to separate it
+%Cmd Member
+)MODEL
+@XSEL|XSHOW                                                               %
+)INIT
+ .HELP = XMITHELP
+ .CURSOR = ZCMD
+ &ZAMT = PAGE
+)END

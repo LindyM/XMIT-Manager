@@ -1,0 +1,25 @@
+//XMITINST JOB (ACCT),'XMIT MGR',CLASS=A,MSGCLASS=H,
+//             NOTIFY=&SYSUID
+//* Allocate the XMIT Manager libraries for this user.
+//* Then transfer the members in text mode, FB 80.
+//ALLOC   EXEC PGM=IEFBR14
+//EXEC     DD DSN=&SYSUID..XMITMGR.EXEC,
+//            DISP=(NEW,CATLG,DELETE),
+//            UNIT=SYSALLDA,SPACE=(CYL,(1,1)),
+//            DSNTYPE=LIBRARY,DSORG=PO,
+//            RECFM=FB,LRECL=80,BLKSIZE=0
+//PANELS   DD DSN=&SYSUID..XMITMGR.PANELS,
+//            DISP=(NEW,CATLG,DELETE),
+//            UNIT=SYSALLDA,SPACE=(CYL,(1,1)),
+//            DSNTYPE=LIBRARY,DSORG=PO,
+//            RECFM=FB,LRECL=80,BLKSIZE=0
+//MSGS     DD DSN=&SYSUID..XMITMGR.MSGS,
+//            DISP=(NEW,CATLG,DELETE),
+//            UNIT=SYSALLDA,SPACE=(TRK,(5,5)),
+//            DSNTYPE=LIBRARY,DSORG=PO,
+//            RECFM=FB,LRECL=80,BLKSIZE=0
+//* If a library already exists, delete it or remove that DD.
+//* Copy members:
+//*   EXEC    <- EXEC(XMITMGR) and EXEC(XMITALC)
+//*   PANELS  <- every panel member
+//*   MSGS    <- MSGS(XMIT00)

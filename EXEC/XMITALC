@@ -1,0 +1,23 @@
+/* REXX */
+/* Allocate userid.XMITMGR.EXEC, PANELS, and MSGS as PDSEs.     */
+uid = Userid()
+call Alloc uid".XMITMGR.EXEC"
+call Alloc uid".XMITMGR.PANELS"
+call Alloc uid".XMITMGR.MSGS"
+Say "Transfer the members in text mode, FB LRECL 80."
+Say "Then run:  EXEC '"uid".XMITMGR.EXEC(XMITMGR)'"
+Exit 0
+
+Alloc:
+  parse arg dsn
+  if Sysdsn("'"dsn"'") = "OK" then do
+    Say dsn "already exists."
+    return
+  end
+  Address TSO "ALLOC DA('"dsn"') NEW CATALOG",
+    "RECFM(FB) LRECL(80) BLKSIZE(0) DSORG(PO)",
+    "DSNTYPE(LIBRARY) SPACE(1,1) CYLINDERS"
+  if rc = 0 then Say "Allocated" dsn
+  else Say "ALLOC failed for" dsn "rc="rc
+  Address TSO "FREE DA('"dsn"')"
+  return

@@ -1,0 +1,12 @@
+//XMITRECV JOB (ACCT),'XMIT RECV',CLASS=A,MSGCLASS=H,
+//             NOTIFY=&SYSUID
+//* Restore an XMIT. The second SYSTSIN record answers the
+//* RECEIVE prompt. Reply R on the next record to replace.
+//RECEIVE EXEC PGM=IKJEFT01,DYNAMNBR=50
+//SYSTSPRT DD SYSOUT=*
+//SYSTSIN  DD *
+  RECEIVE INDATASET('IBMUSER.SOURCE.XMIT')
+  DATASET('IBMUSER.SOURCE.RESTORED')
+/*
+//* INDATASET does not log the file and does not notify the
+//* origin node. The output data set must not be in use.

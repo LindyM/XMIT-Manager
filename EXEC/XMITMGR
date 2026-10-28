@@ -1,0 +1,1602 @@
+/* REXX */
+/* XMITMGR - ISPF dialog for TSO TRANSMIT (XMIT) data sets.     */
+/* z/OS 3.2. View parses INMR records. Create calls TRANSMIT    */
+/* OUTDATASET. Extract calls RECEIVE INDATASET.                 */
+Signal On Syntax Name OnSyntax
+Parse Upper Arg verb rest
+rest = Strip(rest, , "'")
+rest = Strip(rest, , '"')
+libp = 0
+libm = 0
+setup_ok = 0
+Call Setup
+If setup_ok Then Do
+  Select
+    When verb = "VIEW" & rest \= "" Then Call DoView rest
+    When verb = "EXTRACT" & rest \= "" Then Call DoExtract rest
+    Otherwise Call MainLoop
+  End
+End
+Call Shutdown
+Exit 0
+
+Setup:
+  If Sysvar("SYSISPF") \= "ACTIVE" Then Do
+    Say "XMITMGR must run under ISPF."
+    Say "From ISPF option 6 enter:  XMITMGR"
+    Return
+  End
+  Address ISPEXEC "CONTROL ERRORS RETURN"
+  zcmd = ""
+  zdsn = ""
+  znode = ""
+  zuser = ""
+  zindsn = ""
+  zoutdsn = ""
+  zmemb = ""
+  zrepl = "NO"
+  zorg = "SEQ"
+  zedit = "NO"
+  ztarg = ""
+  zans = ""
+  zmsg1 = ""
+  zmsg2 = ""
+  zhead = ""
+  zamt = "PAGE"
+  xfrom = ""
+  xto = ""
+  xtime = ""
+  xnumf = ""
+  xbytes = ""
+  xutil = ""
+  xdsn = ""
+  xfmt = ""
+  xsize = ""
+  xmcnt = ""
+  xfirst = ""
+  xtext = ""
+  xdetail = ""
+  zl1 = ""
+  zl2 = ""
+  zl3 = ""
+  zl4 = ""
+  zl5 = ""
+  zl6 = ""
+  zl7 = ""
+  zl8 = ""
+  zl9 = ""
+  zl10 = ""
+  zl11 = ""
+  zl12 = ""
+  xsel = ""
+  xshow = ""
+  xname = ""
+  xkind = ""
+  Address ISPEXEC "VGET (XMTNODE XMTUSER XMTREPL",
+    "XMTPLIB XMTMLIB) PROFILE"
+  If xmtnode = "" Then xmtnode = "NODE01"
+  If xmtuser = "" Then xmtuser = Userid()
+  If xmtrepl = "" Then xmtrepl = "NO"
+  znode = xmtnode
+  zuser = xmtuser
+  If xmtplib = "" Then xmtplib = Userid()".XMITMGR.PANELS"
+  If xmtmlib = "" Then xmtmlib = Userid()".XMITMGR.MSGS"
+  If Sysdsn("'"xmtplib"'") \= "OK" Then Do
+    Say "Panel library" xmtplib "was not found."
+    Say "Submit JCL(XMITINST) and transfer the panels."
+    Return
+  End
+  Address ISPEXEC "LIBDEF ISPPLIB DATASET ID('"xmtplib"') STACK"
+  libp = 1
+  If Sysdsn("'"xmtmlib"'") = "OK" Then Do
+    Address ISPEXEC "LIBDEF ISPMLIB DATASET ID('"xmtmlib"') STACK"
+    libm = 1
+  End
+  setup_ok = 1
+  Return
+
+Shutdown:
+  Address ISPEXEC
+  If libm Then "LIBDEF ISPMLIB"
+  If libp Then "LIBDEF ISPPLIB"
+  Return
+
+MainLoop:
+  Do Forever
+    znode = xmtnode
+    zuser = xmtuser
+    Address ISPEXEC "DISPLAY PANEL(XMITPRIM)"
+    If rc >= 8 Then Leave
+    opt = Translate(Strip(zcmd))
+    zcmd = ""
+    Select
+      When opt = "" Then
+        Call Tell "XMIT011", 1, "Enter an option", ,
+          "Use 1 List, 2 Create, 3 View, 4 Extract, or 5 Options."
+      When opt = "1" | opt = "L" Then Call DoList
+      When opt = "2" | opt = "C" Then Call DoCreate
+      When opt = "3" | opt = "V" Then Call DoView ""
+      When opt = "4" | opt = "E" Then Call DoExtract ""
+      When opt = "5" | opt = "O" Then Call DoOptions
+      When opt = "END" | opt = "RETURN" | opt = "X" Then Leave
+      When opt = "HELP" Then
+        Address ISPEXEC "DISPLAY PANEL(XMITHELP)"
+      Otherwise
+        Call Tell "XMIT011", 1, "Unknown option", ,
+          "Use 1, 2, 3, 4, 5, or X."
+    End
+  End
+  Return
+
+DoOptions:
+  savedn = xmtnode
+  savedu = xmtuser
+  savedr = xmtrepl
+  savedp = xmtplib
+  savedm = xmtmlib
+  Address ISPEXEC "DISPLAY PANEL(XMITOPT)"
+  If rc >= 8 Then Do
+    xmtnode = savedn
+    xmtuser = savedu
+    xmtrepl = savedr
+    xmtplib = savedp
+    xmtmlib = savedm
+    Return
+  End
+  If \ValidQual(xmtnode) | \ValidQual(xmtuser) Then Do
+    Call Tell "XMIT002", 1, "Invalid name", ,
+      "Node and userid must be 1 to 8 characters."
+    xmtnode = savedn
+    xmtuser = savedu
+    xmtrepl = savedr
+    xmtplib = savedp
+    xmtmlib = savedm
+    Return
+  End
+  If xmtrepl \= "YES" Then xmtrepl = "NO"
+  If xmtplib \= "" & \ValidDsn(xmtplib) Then xmtplib = savedp
+  If xmtmlib \= "" & \ValidDsn(xmtmlib) Then xmtmlib = savedm
+  znode = xmtnode
+  zuser = xmtuser
+  Address ISPEXEC "VPUT (XMTNODE XMTUSER XMTREPL",
+    "XMTPLIB XMTMLIB) PROFILE"
+  Call Tell "XMIT005", 0, "Options saved", ,
+    "Profile updated. Library changes apply on the next start."
+  Return
+
+DoList:
+  If Strip(zdsn) = "" Then Do
+    Call Tell "XMIT002", 1, "Enter a level", ,
+      "Type a data set name or a catalog level."
+    Return
+  End
+  Call BuildList
+  If files_n = 0 Then Do
+    Call Tell "XMIT007", 1, "Nothing listed", ,
+      "No data set was found for "zdsn
+    Return
+  End
+  zhead = Left(Strip(zdsn), 24)
+  Address ISPEXEC "TBTOP FILES"
+  Do Forever
+    Address ISPEXEC "TBDISPL FILES PANEL(XMITLST)"
+    drc = rc
+    If drc >= 8 Then Leave
+    cmd = Translate(Strip(zcmd))
+    zcmd = ""
+    If cmd = "END" | cmd = "RETURN" Then Leave
+    If cmd = "CREATE" Then Call DoCreate
+    Else If cmd = "REFRESH" Then Do
+      Call BuildList
+      Address ISPEXEC "TBTOP FILES"
+    End
+    Else If Word(cmd, 1) = "FIND" Then
+      Call FindRow Subword(cmd, 2)
+    Else If cmd = "V" | cmd = "VIEW" Then Call ActOnCmd "V"
+    Else If cmd = "E" | cmd = "EXTRACT" Then Call ActOnCmd "E"
+    Else If cmd = "T" | cmd = "TEXT" Then Call ActOnCmd "T"
+    Else If cmd = "H" | cmd = "HEX" Then Call ActOnCmd "H"
+    Else If cmd \= "" Then
+      Call Tell "XMIT011", 1, "Unknown command", ,
+        "View, Extract, Text, Hex, FIND, or END."
+    Do While drc = 0
+      sel = Translate(Strip(xsel))
+      If sel = "" Then Leave
+      Call DoLine sel
+      xsel = ""
+      Address ISPEXEC "TBPUT FILES"
+      Address ISPEXEC "TBDISPL FILES"
+      drc = rc
+    End
+  End
+  Return
+
+DoLine:
+  Parse Arg sel
+  Select
+    When sel = "V" | sel = "S" Then Call DoView xname
+    When sel = "E" Then Call DoExtract xname
+    When sel = "T" Then Do
+      Call ParseXmit xname
+      If parse_ok Then Call BrowseText
+    End
+    When sel = "H" Then Do
+      Call ParseXmit xname
+      If parse_ok Then Call BrowseHex
+    End
+    When sel = "D" Then Call DeleteDsn xname
+    Otherwise
+      Call Tell "XMIT010", 1, "Bad line command", ,
+        "Use V, E, T, H, or D."
+  End
+  Return
+
+ActOnCmd:
+  Parse Arg sel
+  If files_n \= 1 Then Do
+    Call Tell "XMIT010", 1, "Choose a file", ,
+      "Type" sel "next to one data set."
+    Return
+  End
+  Address ISPEXEC "TBTOP FILES"
+  Address ISPEXEC "TBSKIP FILES"
+  If rc = 0 Then Call DoLine sel
+  Return
+
+BuildList:
+  files_n = 0
+  Address ISPEXEC "TBEND FILES"
+  Address ISPEXEC "TBCREATE FILES",
+    "NAMES(XSEL,XSHOW,XNAME,XKIND) NOWRITE"
+  raw = Translate(Strip(zdsn))
+  If Pos("(", raw) > 0 Then Do
+    If ValidName(raw) Then Call AddRow raw, "MBR", ""
+    Return
+  End
+  level = StripStar(raw)
+  If level = "" Then Return
+  If Sysdsn("'"level"'") = "OK" Then Do
+    x = Listdsi("'"level"'")
+    If Left(sysdsorg, 2) = "PO" Then Call ListPds level
+    Else Call AddRow level, Left(sysrecfm, 4), syslrecl
+    Return
+  End
+  Call ListLevel level
+  Return
+
+ListPds:
+  Parse Arg pds
+  Address ISPEXEC "LMINIT DATAID(DID) DATASET('"pds"') ENQ(SHR)"
+  If rc > 0 Then Return
+  Address ISPEXEC "LMOPEN DATAID("did") OPTION(INPUT)"
+  If rc > 0 Then Do
+    Address ISPEXEC "LMFREE DATAID("did")"
+    Return
+  End
+  Address ISPEXEC "LMMLIST DATAID("did") OPTION(LIST) MEMBER(MBR)"
+  Do While rc = 0
+    Call AddRow pds"("Strip(mbr)")", "MBR", syslrecl
+    Address ISPEXEC "LMMLIST DATAID("did") OPTION(LIST) MEMBER(MBR)"
+  End
+  Address ISPEXEC "LMMLIST DATAID("did") OPTION(FREE)"
+  Address ISPEXEC "LMCLOSE DATAID("did")"
+  Address ISPEXEC "LMFREE DATAID("did")"
+  Return
+
+ListLevel:
+  Parse Arg level
+  Call Outtrap "LC."
+  Address TSO "LISTCAT LEVEL('"level"') NAME"
+  Call Outtrap "OFF"
+  Do i = 1 To lc.0
+    If Pos("NONVSAM", lc.i) = 0 Then Iterate
+    dsn = ""
+    Do w = 1 To Words(lc.i)
+      tok = Strip(Word(lc.i, w), "B", "-")
+      If ValidDsn(tok) Then dsn = tok
+    End
+    If dsn = "" & i < lc.0 Then Do
+      j = i + 1
+      tok = Word(Strip(lc.j), 1)
+      If ValidDsn(tok) Then dsn = tok
+    End
+    If dsn \= "" Then Do
+      x = Listdsi("'"dsn"'" "NORECALL")
+      If x = 0 Then Do
+        If Left(sysdsorg, 2) \= "PS" Then Iterate
+        If Left(sysrecfm, 1) = "F" & syslrecl \= 80 Then
+          Iterate
+        Call AddRow dsn, Left(sysrecfm, 4), syslrecl
+      End
+      Else If sysreason = 12 Then Call AddRow dsn, "MIG", ""
+    End
+  End
+  Return
+
+AddRow:
+  Parse Arg xname, xkind, xlrecl
+  xsel = ""
+  xshow = Left(xname, 54) Left(xkind, 4) Right(xlrecl, 5)
+  Address ISPEXEC "TBADD FILES"
+  files_n = files_n + 1
+  Return
+
+FindRow:
+  Parse Arg needle
+  needle = Translate(Strip(needle))
+  If needle = "" Then Return
+  Address ISPEXEC "TBTOP FILES"
+  Address ISPEXEC "TBSKIP FILES"
+  Do While rc = 0
+    If Pos(needle, Translate(xname)) > 0 Then Return
+    Address ISPEXEC "TBSKIP FILES"
+  End
+  Call Tell "XMIT007", 1, "Not found", needle "is not in this list."
+  Address ISPEXEC "TBTOP FILES"
+  Return
+
+DeleteDsn:
+  Parse Arg dd
+  If \Confirm("Delete "Left(dd, 44)"?", ,
+      "TSO DELETE will be issued for this data set.") Then Return
+  Address TSO "DELETE '"dd"'"
+  If rc = 0 Then Do
+    Call Tell "XMIT006", 0, "Deleted", dd "was deleted."
+    Call BuildList
+  End
+  Else Call Tell "XMIT004", 1, "DELETE failed", "rc="rc "for" dd
+  Return
+
+DoCreate:
+  znode = xmtnode
+  zuser = xmtuser
+  zrepl = xmtrepl
+  If zindsn = "" Then zindsn = ""
+  If zorg = "" Then zorg = "SEQ"
+  If zedit = "" Then zedit = "NO"
+  Do Forever
+    Address ISPEXEC "DISPLAY PANEL(XMITCREA)"
+    If rc >= 8 Then Leave
+    znode = Translate(Strip(znode))
+    zuser = Translate(Strip(zuser))
+    zindsn = Translate(Strip(zindsn))
+    zoutdsn = Translate(Strip(zoutdsn))
+    zmemb = Translate(Strip(zmemb))
+    If \ValidDsn(zindsn) | \ValidDsn(zoutdsn) Then Do
+      Call Tell "XMIT002", 1, "Invalid name", ,
+        "Source and XMIT data set names must be valid."
+      Iterate
+    End
+    If \ValidQual(znode) | \ValidQual(zuser) Then Do
+      Call Tell "XMIT002", 1, "Invalid target", ,
+        "Node and userid must be 1 to 8 characters."
+      Iterate
+    End
+    If \ValidMems(zmemb) Then Do
+      Call Tell "XMIT002", 1, "Invalid members", ,
+        "Use a comma list such as MEM1,MEM2."
+      Iterate
+    End
+    If Sysdsn("'"zindsn"'") \= "OK" Then Do
+      Call Tell "XMIT001", 1, "Not found", zindsn "was not found."
+      Iterate
+    End
+    If Translate(zedit) = "YES" Then
+      Address ISPEXEC "EDIT DATASET('"zindsn"')"
+    If Sysdsn("'"zoutdsn"'") = "OK" Then Do
+      If Translate(zrepl) \= "YES" Then Do
+        Call Tell "XMIT008", 1, "Already exists", ,
+          "Set Replace to YES or choose a new XMIT name."
+        Iterate
+      End
+      If \Confirm("Replace "zoutdsn"?", ,
+          "The existing data set will be deleted first.") Then
+        Iterate
+      Address TSO "DELETE '"zoutdsn"'"
+    End
+    cmd = "TRANSMIT" znode"."zuser "DATASET('"zindsn"')"
+    mems = Space(zmemb, 0)
+    If mems \= "" & mems \= "*" Then
+      cmd = cmd "MEMBERS("mems")"
+    org = Translate(Strip(zorg))
+    If org = "PDS" | org = "PO" Then cmd = cmd "PDS"
+    If org = "SEQ" | org = "PS" Then cmd = cmd "SEQ"
+    cmd = cmd "OUTDATASET('"zoutdsn"') NOLOG NONOTIFY"
+    Call Outtrap "TM."
+    Address TSO cmd
+    trc = rc
+    Call Outtrap "OFF"
+    detail = ""
+    n = tm.0
+    If n > 4 Then n = 4
+    Do i = 1 To n
+      detail = detail Strip(tm.i)
+    End
+    If trc = 0 Then Do
+      zdsn = zoutdsn
+      xmtnode = znode
+      xmtuser = zuser
+      Call Tell "XMIT005", 0, "XMIT created", ,
+        "TRANSMIT wrote "zoutdsn
+      Leave
+    End
+    Call Tell "XMIT003", 1, "TRANSMIT failed", ,
+      "rc="trc detail
+  End
+  Return
+
+DoExtract:
+  Parse Arg preset
+  If preset \= "" Then zdsn = preset
+  zrepl = xmtrepl
+  Do Forever
+    Address ISPEXEC "DISPLAY PANEL(XMITEXTR)"
+    If rc >= 8 Then Leave
+    zdsn = Translate(Strip(zdsn))
+    ztarg = Translate(Strip(ztarg))
+    zmemb = Translate(Strip(zmemb))
+    If \ValidName(zdsn) | \ValidDsn(ztarg) Then Do
+      Call Tell "XMIT002", 1, "Invalid name", ,
+        "Check the XMIT name and the target data set."
+      Iterate
+    End
+    If zmemb \= "" & \ValidMem(zmemb) Then Do
+      Call Tell "XMIT002", 1, "Invalid member", ,
+        "Member names are 1 to 8 characters."
+      Iterate
+    End
+    If Sysdsn("'"zdsn"'") \= "OK" Then Do
+      Call Tell "XMIT001", 1, "Not found", zdsn "was not found."
+      Iterate
+    End
+    If zmemb = "" Then Call ReceiveWhole
+    Else Call ReceiveMember
+  End
+  Return
+
+ReceiveWhole:
+  If \QueueReply(ztarg, zrepl) Then Return
+  Call CallReceive
+  If trc = 0 Then
+    Call Tell "XMIT012", 0, "Restored", "RECEIVE wrote "ztarg
+  Else
+    Call Tell "XMIT004", 1, "RECEIVE failed", ,
+      Left("rc="trc RmText(), 78)
+  Return
+
+ReceiveMember:
+  temp = Userid()".XMITMGR.T"Right(D2x(Time("S") // 65535), 4, "0")
+  If Sysdsn("'"temp"'") = "OK" Then
+    Address TSO "DELETE '"temp"'"
+  If \QueueReply(temp, "YES") Then Return
+  Call CallReceive
+  If trc \= 0 Then Do
+    Call Tell "XMIT004", 1, "RECEIVE failed", ,
+      Left("rc="trc RmText(), 78)
+    Return
+  End
+  x = Listdsi("'"temp"'")
+  If Left(sysdsorg, 2) \= "PO" Then Do
+    Address TSO "DELETE '"temp"'"
+    Call Tell "XMIT004", 1, "Not partitioned", ,
+      "The XMIT did not restore as a PDS. Leave Member blank."
+    Return
+  End
+  If Sysdsn("'"ztarg"'") \= "OK" Then Do
+    Address TSO "ALLOC DA('"ztarg"') NEW CATALOG LIKE('"temp"')",
+      "SPACE(5,5) CYLINDERS"
+    Address TSO "FREE DA('"ztarg"')"
+  End
+  Address ISPEXEC "LMINIT DATAID(FROMID) DATASET('"temp"') ENQ(SHR)"
+  Address ISPEXEC "LMINIT DATAID(TOID) DATASET('"ztarg"') ENQ(EXCLU)"
+  Address ISPEXEC "LMCOPY FROMID("fromid") FROMMEM("zmemb")",
+    "TODATAID("toid") TOMEM("zmemb") REPLACE"
+  lrc = rc
+  Address ISPEXEC "LMFREE DATAID("fromid")"
+  Address ISPEXEC "LMFREE DATAID("toid")"
+  Address TSO "DELETE '"temp"'"
+  If lrc = 0 Then
+    Call Tell "XMIT012", 0, "Member copied", zmemb "is in "ztarg
+  Else
+    Call Tell "XMIT004", 1, "Copy failed", ,
+      "LMCOPY rc="lrc ". The member may not be in the XMIT."
+  Return
+
+QueueReply:
+  Parse Arg target, repl
+  Call DrainStack
+  If Sysdsn("'"target"'") = "OK" Then Do
+    If Translate(repl) \= "YES" Then Do
+      Call Tell "XMIT008", 1, "Already exists", ,
+        "Set Replace to YES or choose a new target."
+      Return 0
+    End
+    Queue "DSN('"target"')"
+    Queue "R"
+  End
+  Else Queue "DSN('"target"')"
+  Return 1
+
+CallReceive:
+  oldp = Prompt("ON")
+  Call Outtrap "RM."
+  Address TSO "RECEIVE INDATASET('"zdsn"')"
+  trc = rc
+  Call Outtrap "OFF"
+  Call DrainStack
+  Call Prompt oldp
+  Return
+
+DrainStack:
+  Do While Queued() > 0
+    Pull junk
+  End
+  Return
+
+RmText:
+  txt = ""
+  Do i = 1 To rm.0
+    up = Translate(rm.i)
+    If Pos("INMR", up) > 0 | Pos("FAIL", up) > 0 Then
+      txt = txt Strip(rm.i)
+  End
+  If txt = "" & rm.0 > 0 Then txt = Strip(rm.1)
+  Return txt
+
+DoView:
+  Parse Arg vd
+  If vd \= "" Then zdsn = vd
+  If Strip(zdsn) = "" Then Do
+    Call Tell "XMIT002", 1, "Enter a data set", ,
+      "Type the XMIT data set name on the main panel."
+    Return
+  End
+  Call ParseXmit zdsn
+  If \parse_ok Then Return
+  zhead = Left(zdsn, 32)
+  Call FillSummary
+  Call ShowReport
+  Do Forever
+    Address ISPEXEC "DISPLAY PANEL(XMITINFO)"
+    drc = rc
+    If drc = 8 Then Leave
+    If drc > 8 Then Do
+      Call Tell "XMIT011", 1, "View failed", Left(zerrlm, 78)
+      Return
+    End
+    cmd = Translate(Strip(zcmd))
+    zcmd = ""
+    Select
+      When cmd = "" | cmd = "S" | cmd = "VIEW" Then Nop
+      When cmd = "C" | cmd = "CONTROLS" Then Call BrowseRpt
+      When cmd = "M" | cmd = "MEMBERS" Then Call ShowReport
+      When cmd = "T" | cmd = "TEXT" Then Call BrowseText
+      When cmd = "H" | cmd = "HEX" Then Call BrowseHex
+      When cmd = "E" | cmd = "EXTRACT" Then Call DoExtract zdsn
+      When cmd = "END" | cmd = "RETURN" Then Leave
+      Otherwise
+        Call Tell "XMIT011", 1, "Unknown command", ,
+          "Use C, M, T, H, E, or END."
+    End
+    Call FillSummary
+  End
+  Return
+
+FillSummary:
+  xfrom = Safe(Strip(hfromn"."hfromu, "T", "."))
+  xto = Safe(Strip(hton"."htou, "T", "."))
+  xtime = Safe(htime)
+  xnumf = Safe(hnumf)
+  xbytes = Safe(xin.0 * 80)
+  If fmax < 1 Then Do
+    xutil = ""
+    xdsn = ""
+    xfmt = ""
+    xsize = ""
+  End
+  Else Do
+    xutil = Safe(futil.1)
+    xdsn = Safe(fdsn.1)
+    xfmt = Safe(fdsorg.1 frecfm.1 "Lrecl" flrecl.1)
+    xsize = Safe("Blk" fblk.1 "Bytes" fsize.1 "Dir" fdir.1)
+  End
+  xmcnt = Safe(mbr.0)
+  Do i = 1 To 6
+    Call Value "XL"i, ""
+  End
+  If mbr.0 = 0 Then Call Value "XL1", "none"
+  Else Do
+    last = mbr.0
+    If last > 6 Then last = 5
+    Do i = 1 To last
+      Call Value "XL"i, MemberLine(i)
+    End
+    If mbr.0 > 6 Then
+      Call Value "XL6", Safe("+" mbr.0 - 5 "more")
+  End
+  xfirst = Value("XL1")
+  If recovered Then xtext = "recovered from the unload"
+  Else If text.0 > 0 Then xtext = Safe(text.0 "logical records")
+  Else xtext = "none"
+  If warn.0 > 0 Then xtext = Safe(warn.1)
+  If mbr.0 = 0 & iebfile \= 0 Then
+    xtext = Safe("unload records" unl.0)
+  Return
+
+MemberLine:
+  Parse Arg k
+  vvmm = ""
+  If mbr.k.4 \= "" Then
+    vvmm = Right(mbr.k.4, 2, "0")"."Right(mbr.k.5, 2, "0")
+  line = Left(mbr.k.1, 8) Left(mbr.k.2, 6) Left(vvmm, 5)
+  line = line Left(mbr.k.6, 10) Left(mbr.k.11, 8)
+  Return Safe(line)
+
+Safe:
+  Parse Arg txt
+  If Length(txt) > 54 Then txt = Left(txt, 54)
+  out = ""
+  Do si = 1 To Length(txt)
+    ch = Substr(txt, si, 1)
+    d = C2d(ch)
+    If d < 64 | d = 78 | d = 79 | d = 108 | d = 109 | d = 124 Then
+      ch = "."
+    out = out || ch
+  End
+  Return out
+
+ShowSummary:
+  br.0 = 0
+  Call AddBrowse "File     "zhead
+  Call AddBrowse "Origin   "xfrom
+  Call AddBrowse "Target   "xto
+  Call AddBrowse "Time     "xtime
+  Call AddBrowse "Files    "xnumf
+  Call AddBrowse "Cards    "xbytes
+  Call AddBrowse "Utility  "xutil
+  Call AddBrowse "Data set "xdsn
+  Call AddBrowse "Format   "xfmt
+  Call AddBrowse "Size     "xsize
+  Call AddBrowse "Members  "xmcnt
+  Call AddBrowse "First    "xfirst
+  Call AddBrowse "Text     "xtext
+  Call Browse
+  Return
+
+ShowReport:
+  br.0 = 0
+  Call AddBrowse "File     "zhead
+  Call AddBrowse "Origin   "xfrom
+  Call AddBrowse "Target   "xto
+  Call AddBrowse "Time     "xtime
+  Call AddBrowse "Utility  "xutil
+  Call AddBrowse "Data set "xdsn
+  Call AddBrowse "Format   "xfmt
+  Call AddBrowse "Members  "xmcnt
+  Call AddBrowse " "
+  Call AddBrowse "Name     TTR      VV.MM Created    User"
+  If mbr.0 = 0 Then Call AddBrowse "none"
+  Do k = 1 To mbr.0
+    Call AddBrowse MemberLine(k)
+  End
+  Call Browse
+  Return
+
+ShowMembers:
+  Call ShowReport
+  Return
+
+BrowseMember:
+  Parse Arg want
+  Do k = 1 To mbr.0
+    If mbr.k.1 = want Then Leave
+  End
+  If k > mbr.0 Then Return
+  If mbr.k.12 = 0 | mbr.k.13 < mbr.k.12 Then Do
+    Call Tell "XMIT009", 1, "No member text", ,
+      "Use T for unload text, or Extract to RECEIVE the member."
+    Return
+  End
+  br.0 = 0
+  Do i = mbr.k.12 To mbr.k.13
+    Call AddBrowse text.i
+  End
+  Call Browse
+  Return
+
+BrowseText:
+  If text.0 = 0 Then Do
+    Call Tell "XMIT007", 1, "No text", ,
+      "No character records were found. Try H for hex."
+    Return
+  End
+  br.0 = 0
+  Do i = 1 To text.0
+    Call AddBrowse text.i
+  End
+  Call Browse
+  Return
+
+BrowseRpt:
+  br.0 = 0
+  Do i = 1 To rpt.0
+    Call AddBrowse rpt.i
+  End
+  Call Browse
+  Return
+
+BrowseHex:
+  br.0 = 0
+  Do p = 1 To Length(hexblob) By 16
+    chunk = Substr(hexblob, p, 16)
+    hx = ""
+    ch = ""
+    Do b = 1 To Length(chunk)
+      byte = C2d(Substr(chunk, b, 1))
+      hx = hx || C2x(Substr(chunk, b, 1)) || " "
+      If byte < 64 Then ch = ch || "."
+      Else ch = ch || Substr(chunk, b, 1)
+    End
+    off = Right(D2x(p - 1), 6, "0")
+    Call AddBrowse off hx ch
+  End
+  If br.0 = 0 Then Call AddBrowse "No bytes read."
+  Call Browse
+  Return
+
+AddBrowse:
+  Parse Arg line
+  Do While Length(line) > 80
+    br.0 = br.0 + 1
+    n = br.0
+    br.n = Left(line, 80)
+    line = Substr(line, 81)
+  End
+  br.0 = br.0 + 1
+  n = br.0
+  br.n = Left(line, 80)
+  Return
+
+Browse:
+  If br.0 = 0 Then Do
+    br.0 = 1
+    br.1 = " "
+  End
+  Call Outtrap "OM."
+  Address TSO "FREE FI(XMTBROW)"
+  Address TSO "ALLOC FI(XMTBROW) NEW DELETE REUSE",
+    "UNIT(SYSALLDA) SPACE(5,15) TRACKS DSORG(PS)",
+    "RECFM(F B) LRECL(80) BLKSIZE(3120)"
+  arc = rc
+  j = om.0
+  msg = ""
+  If j > 0 Then msg = Strip(om.j)
+  Call Outtrap "OFF"
+  If arc \= 0 Then Do
+    Call Tell "XMIT004", 1, "Browse failed", ,
+      Left("Allocate failed." msg, 78)
+    Return
+  End
+  Call Outtrap "OM."
+  Address TSO "EXECIO * DISKW XMTBROW (STEM BR. FINIS"
+  arc = rc
+  j = om.0
+  msg = ""
+  If j > 0 Then msg = Strip(om.j)
+  Call Outtrap "OFF"
+  If arc \= 0 Then Do
+    Call Tell "XMIT004", 1, "Browse failed", ,
+      Left("Write failed." msg, 78)
+    Address TSO "FREE FI(XMTBROW)"
+    Return
+  End
+  Address ISPEXEC "LMINIT DATAID(BID) DDNAME(XMTBROW)"
+  If rc > 4 Then Do
+    Call Tell "XMIT004", 1, "Browse failed", ,
+      "LMINIT failed, RC" rc
+    Address TSO "FREE FI(XMTBROW)"
+    Return
+  End
+  Address ISPEXEC "BROWSE DATAID("bid")"
+  Address ISPEXEC "LMFREE DATAID("bid")"
+  Call Outtrap "OM."
+  Address TSO "FREE FI(XMTBROW)"
+  Call Outtrap "OFF"
+  Return
+
+ParseXmit:
+  Parse Arg pdsn
+  parse_ok = 0
+  Call ResetStems
+  pdsn = Translate(Strip(pdsn))
+  If \ValidName(pdsn) Then Do
+    Call Tell "XMIT002", 1, "Invalid name", pdsn "is not a valid name."
+    Return
+  End
+  If Sysdsn("'"pdsn"'") \= "OK" Then Do
+    Call Tell "XMIT001", 1, "Not found", pdsn "was not found."
+    Return
+  End
+  If Pos("(", pdsn) = 0 Then Do
+    x = Listdsi("'"pdsn"'")
+    If x = 0 & Left(sysdsorg, 2) \= "PS" Then Do
+      Call Tell "XMIT009", 1, "Not an XMIT", ,
+        "Only a sequential data set can be an XMIT file."
+      Return
+    End
+  End
+  Address TSO "ALLOC FI(XMITIN) DA('"pdsn"') SHR REUSE"
+  If rc \= 0 Then Do
+    Call Tell "XMIT001", 1, "Alloc failed", "Could not allocate "pdsn
+    Return
+  End
+  Call Outtrap "OM."
+  Address TSO "EXECIO 80000 DISKR XMITIN (STEM XIN. FINIS"
+  erc = rc
+  j = om.0
+  msg = ""
+  If j > 0 Then msg = Strip(om.j)
+  Call Outtrap "OFF"
+  Address TSO "FREE FI(XMITIN)"
+  If erc > 4 Then Do
+    If msg = "" Then msg = "Could not read "pdsn
+    Call Tell "XMIT009", 1, "Not an XMIT", Left(msg, 78)
+    Return
+  End
+  If xin.0 = 0 Then Do
+    Call Tell "XMIT001", 1, "Empty", pdsn "has no records."
+    Return
+  End
+  If xin.0 >= 80000 Then
+    Call AddWarn "Read stopped after 80000 records."
+  carry = ""
+  lbuf = ""
+  hexblob = ""
+  Do recn = 1 To xin.0
+    If Length(hexblob) < 4096 Then
+      hexblob = Left(hexblob || xin.recn, 4096)
+    carry = carry || xin.recn
+    Call Drain
+  End
+  If saw01 \= 1 Then Do
+    Call Tell "XMIT009", 1, "Not an XMIT", ,
+      "INMR01 was not found in "pdsn
+    Return
+  End
+  Call FinishMembers
+  parse_ok = 1
+  Return
+
+ResetStems:
+  saw01 = 0
+  openfil = 0
+  fmax = 0
+  iebfile = 0
+  recovered = 0
+  dirdone = 0
+  sawdir = 0
+  dirrecs = 0
+  emptydir = 0
+  dirbuf = ""
+  carvebuf = ""
+  unl.0 = 0
+  hfromn = ""
+  hfromu = ""
+  hton = ""
+  htou = ""
+  htime = ""
+  hnumf = ""
+  hlrecl = ""
+  mbr.0 = 0
+  text.0 = 0
+  rpt.0 = 0
+  warn.0 = 0
+  xin.0 = 0
+  Do n = 1 To 8
+    futil.n = ""
+    fdsn.n = ""
+    fdsorg.n = ""
+    frecfm.n = ""
+    flrecl.n = ""
+    fblk.n = ""
+    fsize.n = ""
+    fdir.n = ""
+  End
+  Return
+
+Drain:
+  Do While Length(carry) >= 2
+    seglen = C2d(Substr(carry, 1, 1))
+    If seglen = 0 Then Do
+      If Verify(carry, "00"x) = 0 Then carry = ""
+      Leave
+    End
+    If seglen < 2 Then Do
+      Call AddWarn "A segment length was less than 2."
+      carry = ""
+      Leave
+    End
+    If Length(carry) < seglen Then Leave
+    flg = Substr(carry, 2, 1)
+    data = Substr(carry, 3, seglen - 2)
+    carry = Substr(carry, seglen + 1)
+    If Bitand(flg, "80"x) = "80"x Then Do
+      lbuf = data
+      lflg = flg
+    End
+    Else lbuf = lbuf || data
+    If Bitand(flg, "40"x) = "40"x Then Do
+      work = lbuf
+      wflg = lflg
+      Call Accept
+      lbuf = ""
+    End
+  End
+  If Length(carry) > 400000 Then Do
+    Call AddWarn "The segment buffer overflowed."
+    carry = ""
+  End
+  Return
+
+Accept:
+  If Bitand(wflg, "20"x) = "20"x Then Call AcceptControl
+  Else Call AcceptData
+  Return
+
+AcceptControl:
+  If Length(work) < 6 Then Return
+  id = Substr(work, 1, 6)
+  If Left(id, 4) \= "INMR" Then Return
+  fnum = 0
+  If id = "INMR02" Then Do
+    If Length(work) < 10 Then Return
+    fnum = C2d(Substr(work, 7, 4))
+    unitblob = Substr(work, 11)
+    Call ParseUnits
+  End
+  Else Do
+    unitblob = Substr(work, 7)
+    Call ParseUnits
+  End
+  If rpt.0 < 400 Then Do
+    rpt.0 = rpt.0 + 1
+    n = rpt.0
+    rpt.n = id "file" fnum
+    Do u = 1 To uu.0
+      If rpt.0 >= 400 Then Leave
+      rpt.0 = rpt.0 + 1
+      n = rpt.0
+      rpt.n = " " uu.u.1 KeyName(uu.u.1) uu.u.2
+    End
+  End
+  If id = "INMR01" Then Do
+    saw01 = 1
+    hfromn = UnitVal("1011")
+    hfromu = UnitVal("1012")
+    hton = UnitVal("1001")
+    htou = UnitVal("1002")
+    htime = UnitVal("1024")
+    hnumf = UnitVal("102F")
+    hlrecl = UnitVal("0042")
+  End
+  Else If id = "INMR02" & fnum > 0 & fnum <= 8 Then
+    Call MergeSide fnum
+  Else If id = "INMR03" Then Do
+    If iebfile \= 0 Then openfil = iebfile
+    Else openfil = 1
+  End
+  Else If id = "INMR06" Then openfil = 0
+  Return
+
+MergeSide:
+  Parse Arg fnum
+  If fmax < fnum Then fmax = fnum
+  util = UnitVal("1028")
+  org = UnitVal("003C")
+  If util \= "" Then futil.fnum = Strip(futil.fnum util)
+  take = 0
+  If Wordpos("IEBCOPY", util) > 0 | org = "PO" Then Do
+    take = 1
+    iebfile = fnum
+  End
+  If fdsn.fnum = "" Then take = 1
+  If \take Then Return
+  If UnitVal("0002") \= "" Then fdsn.fnum = UnitVal("0002")
+  If UnitVal("003C") \= "" Then fdsorg.fnum = UnitVal("003C")
+  If UnitVal("0049") \= "" Then frecfm.fnum = UnitVal("0049")
+  If UnitVal("0042") \= "" Then flrecl.fnum = UnitVal("0042")
+  If UnitVal("0030") \= "" Then fblk.fnum = UnitVal("0030")
+  If UnitVal("102C") \= "" Then fsize.fnum = UnitVal("102C")
+  If UnitVal("000C") \= "" Then fdir.fnum = UnitVal("000C")
+  Return
+
+AcceptData:
+  If openfil = 0 Then Return
+  If iebfile \= 0 Then Call TakeUnload
+  Else Call TakeText
+  Return
+
+TakeText:
+  If text.0 >= 5000 Then Return
+  text.0 = text.0 + 1
+  n = text.0
+  pass = work
+  text.n = CleanPass()
+  Return
+
+TakeUnload:
+  If unl.0 >= 4000 Then Return
+  If Length(work) > 200000 Then Return
+  unl.0 = unl.0 + 1
+  n = unl.0
+  unl.n = work
+  Return
+
+ScanDir:
+  ended = 0
+  i = 1
+  rlen = Length(work)
+  Do While i + 11 <= rlen
+    If Substr(work, i, 8) = "FFFFFFFFFFFFFFFF"x Then Do
+      ended = 1
+      Leave
+    End
+    If Looks(i) Then Do
+      hw = C2d(Bitand(Substr(work, i + 11, 1), "1F"x))
+      amname = Substr(work, i, 8)
+      amttr = Substr(work, i + 8, 3)
+      amind = Substr(work, i + 11, 1)
+      amuser = Substr(work, i + 12, hw * 2)
+      Call AddMember
+      sawdir = 1
+      i = i + 12 + hw * 2
+    End
+    Else i = i + 1
+  End
+  Return ended
+
+Looks:
+  Parse Arg at
+  If \IsName(C2x(Substr(work, at, 8))) Then Return 0
+  hw = C2d(Bitand(Substr(work, at + 11, 1), "1F"x))
+  If hw > 31 Then Return 0
+  nxt = at + 12 + hw * 2
+  If nxt > Length(work) Then Return 1
+  If nxt + 7 <= Length(work) Then Do
+    If Substr(work, nxt, 8) = "FFFFFFFFFFFFFFFF"x Then Return 1
+    If IsName(C2x(Substr(work, nxt, 8))) Then Return 1
+  End
+  n = Length(work) - nxt + 1
+  If n > 8 Then n = 8
+  If n < 1 Then Return 1
+  If Verify(Substr(work, nxt, n), "00"x) = 0 Then Return 1
+  Return 0
+
+IsName: Procedure
+  Parse Arg hx
+  s = X2c(hx)
+  If s = "FFFFFFFFFFFFFFFF"x Then Return 0
+  Return ValidMem(Strip(s, "T"))
+
+AddMember:
+  If mbr.0 >= 2000 Then Return
+  mbr.0 = mbr.0 + 1
+  k = mbr.0
+  mbr.k.1 = Strip(amname, "T")
+  mbr.k.2 = C2x(amttr)
+  mbr.k.3 = 0
+  If Bitand(amind, "80"x) = "80"x Then mbr.k.3 = 1
+  mbr.k.4 = ""
+  mbr.k.5 = ""
+  mbr.k.6 = ""
+  mbr.k.7 = ""
+  mbr.k.8 = ""
+  mbr.k.9 = ""
+  mbr.k.10 = ""
+  mbr.k.11 = ""
+  mbr.k.12 = 0
+  mbr.k.13 = 0
+  mbr.k.14 = "IEBCOPY"
+  If Length(amuser) >= 30 Then Call MemberStats k
+  Return
+
+MemberStats:
+  Parse Arg k
+  user = amuser
+  vv = C2d(Substr(user, 1, 1))
+  mm = C2d(Substr(user, 2, 1))
+  If vv > 99 | mm > 99 Then Return
+  cd = Packed(C2x(Substr(user, 5, 4)))
+  ch = Packed(C2x(Substr(user, 9, 4)))
+  If cd = "" | ch = "" Then Return
+  mbr.k.4 = vv
+  mbr.k.5 = mm
+  mbr.k.6 = cd
+  hh = Right(C2d(Substr(user, 13, 1)), 2, "0")
+  mn = Right(C2d(Substr(user, 14, 1)), 2, "0")
+  mbr.k.7 = ch hh":"mn
+  mbr.k.8 = C2d(Substr(user, 15, 2))
+  mbr.k.9 = C2d(Substr(user, 17, 2))
+  mbr.k.10 = C2d(Substr(user, 19, 2))
+  mbr.k.11 = Strip(Substr(user, 21, 8))
+  Return
+
+FinishMembers:
+  If iebfile = 0 Then Do
+    Call SplitAdd
+    Return
+  End
+  Call ParseIeb
+  If mbr.0 = 0 Then Do
+    Do i = 1 To unl.0
+      work = unl.i
+      Call ScanDir
+    End
+  End
+  Return
+
+ParseIeb:
+  If unl.0 < 1 Then Return
+  start = 1
+  If Copyr1(1) Then start = 3
+  If start > unl.0 Then Return
+  dir = ""
+  dirlast = start - 1
+  Do i = start To unl.0
+    dir = dir || unl.i
+    dirlast = i
+    If SawEnd() Then Leave
+    If Length(dir) > 300000 Then Leave
+  End
+  Call Walk276
+  carvebuf = ""
+  Do i = dirlast + 1 To unl.0
+    If Length(carvebuf) > 120000 Then Leave
+    carvebuf = carvebuf || unl.i
+  End
+  If carvebuf \= "" Then Call Carve
+  Return
+
+Copyr1:
+  Parse Arg idx
+  rec = unl.idx
+  If Length(rec) < 12 Then Return 0
+  If Substr(rec, 2, 3) = "CA6D0F"x Then Return 1
+  If Substr(rec, 10, 3) = "CA6D0F"x Then Return 1
+  Return 0
+
+SawEnd:
+  If EndAt(1) Then Return 1
+  If EndAt(9) Then Return 1
+  Return 0
+
+EndAt:
+  Parse Arg pos
+  Do While pos + 21 <= Length(dir)
+    If \BlockOk(pos) Then Return 0
+    used = C2d(Substr(dir, pos + 20, 2))
+    dlen = used - 2
+    ent = pos + 22
+    endp = ent + dlen - 1
+    If endp > Length(dir) Then endp = Length(dir)
+    Do While ent + 7 <= endp
+      If Substr(dir, ent, 8) = "FFFFFFFFFFFFFFFF"x Then Return 1
+      If ent + 11 > endp Then Leave
+      hw = C2d(Bitand(Substr(dir, ent + 11, 1), "1F"x))
+      ent = ent + 12 + hw * 2
+    End
+    pos = pos + 276
+  End
+  Return 0
+
+Walk276:
+  Call WalkAt 1
+  If mbr.0 = 0 Then Call WalkAt 9
+  Return
+
+WalkAt:
+  Parse Arg pos
+  Do While pos + 21 <= Length(dir)
+    If \BlockOk(pos) Then Leave
+    used = C2d(Substr(dir, pos + 20, 2))
+    dlen = used - 2
+    ent = pos + 22
+    endp = ent + dlen - 1
+    If endp > Length(dir) Then endp = Length(dir)
+    hit = 0
+    Do While ent + 11 <= endp
+      If Substr(dir, ent, 8) = "FFFFFFFFFFFFFFFF"x Then Return
+      nm = Strip(Substr(dir, ent, 8), "T")
+      If \ValidMem(nm) Then Leave
+      hw = C2d(Bitand(Substr(dir, ent + 11, 1), "1F"x))
+      elen = 12 + hw * 2
+      amname = Substr(dir, ent, 8)
+      amttr = Substr(dir, ent + 8, 3)
+      amind = Substr(dir, ent + 11, 1)
+      amuser = ""
+      If hw > 0 Then Do
+        If ent + 11 + hw * 2 <= Length(dir) Then
+          amuser = Substr(dir, ent + 12, hw * 2)
+      End
+      Call AddMember
+      hit = 1
+      ent = ent + elen
+    End
+    If \hit Then Leave
+    pos = pos + 276
+  End
+  Return
+
+BlockOk:
+  Parse Arg pos
+  If pos + 21 > Length(dir) Then Return 0
+  If Substr(dir, pos + 8, 2) \= "0008"x Then Return 0
+  If Substr(dir, pos + 10, 2) \= "0100"x Then Return 0
+  used = C2d(Substr(dir, pos + 20, 2))
+  If used < 14 | used > 256 Then Return 0
+  Return 1
+
+SplitAdd:
+  cur = 0
+  Do i = 1 To text.0
+    line = text.i
+    named = 0
+    If Left(line, 2) = "./" Then Do
+      Parse Upper Var line . "NAME=" nm .
+      Parse Var nm nm "," .
+      nm = Strip(nm)
+      If ValidMem(nm) Then Do
+        mbr.0 = mbr.0 + 1
+        cur = mbr.0
+        mbr.cur.1 = nm
+        mbr.cur.2 = ""
+        mbr.cur.3 = 0
+        mbr.cur.4 = ""
+        mbr.cur.5 = ""
+        mbr.cur.6 = ""
+        mbr.cur.7 = ""
+        mbr.cur.8 = ""
+        mbr.cur.9 = ""
+        mbr.cur.10 = ""
+        mbr.cur.11 = ""
+        mbr.cur.12 = i + 1
+        mbr.cur.13 = i
+        mbr.cur.14 = "IEBUPDTE"
+        named = 1
+      End
+    End
+    If \named & cur > 0 Then mbr.cur.13 = i
+  End
+  Return
+
+Carve:
+  lrecl = 80
+  If iebfile > 0 Then Do
+    If Datatype(flrecl.iebfile) = "NUM" Then lrecl = flrecl.iebfile
+  End
+  If lrecl < 1 | lrecl > 255 Then lrecl = 80
+  i = 1
+  n = Length(carvebuf)
+  got = 0
+  text.0 = 0
+  Do While i <= n & got < 2000
+    If i + lrecl - 1 <= n Then Do
+      probe = Substr(carvebuf, i, lrecl)
+      If Mostly() Then Do
+        text.0 = text.0 + 1
+        tx = text.0
+        pass = probe
+        text.tx = CleanPass()
+        got = got + 1
+        i = i + lrecl
+        Iterate
+      End
+    End
+    i = i + 1
+  End
+  If got > 8 Then recovered = 1
+  Else Do
+    text.0 = 0
+    recovered = 0
+  End
+  Return
+
+ParseUnits:
+  uu.0 = 0
+  p = 1
+  Do While p + 3 <= Length(unitblob)
+    key = C2x(Substr(unitblob, p, 2))
+    cnt = C2d(Substr(unitblob, p + 2, 2))
+    p = p + 4
+    If cnt > 64 Then Leave
+    val = ""
+    Do c = 1 To cnt
+      If p + 1 > Length(unitblob) Then Leave
+      ln = C2d(Substr(unitblob, p, 2))
+      p = p + 2
+      If p + ln - 1 > Length(unitblob) Then Leave
+      piece = Substr(unitblob, p, ln)
+      p = p + ln
+      If val \= "" & (key = "0002" | key = "0003") Then
+        val = val || "."
+      val = val || piece
+    End
+    If Length(val) > 240 Then val = Left(val, 240)
+    showkey = key
+    showval = val
+    uu.0 = uu.0 + 1
+    n = uu.0
+    uu.n.1 = key
+    uu.n.2 = ShowUnit()
+  End
+  Return
+
+UnitVal:
+  Parse Arg want
+  Do i = 1 To uu.0
+    If uu.i.1 = want Then Return uu.i.2
+  End
+  Return ""
+
+ShowUnit: Procedure Expose showkey showval
+  key = showkey
+  val = showval
+  Select
+    When key = "003C" Then Return Dsorg(C2x(val))
+    When key = "0049" Then Return Recfm(C2x(val))
+    When key = "1024" Then Return ShowTime(C2x(val))
+    When key = "0042" | key = "0030" | key = "102C" | ,
+         key = "102F" | key = "102A" | key = "000C" Then
+      Return Unsigned(C2x(val))
+    Otherwise
+      If Printable(C2x(val)) Then Return Strip(val)
+      Return C2x(val)
+  End
+
+KeyName:
+  Parse Arg key
+  Select
+    When key = "0002" Then Return "INMDSNAM"
+    When key = "0003" Then Return "INMMEMBR"
+    When key = "000C" Then Return "INMDIR"
+    When key = "0028" Then Return "INMTERM"
+    When key = "0030" Then Return "INMBLKSZ"
+    When key = "003C" Then Return "INMDSORG"
+    When key = "0042" Then Return "INMLRECL"
+    When key = "0049" Then Return "INMRECFM"
+    When key = "1001" Then Return "INMTNODE"
+    When key = "1002" Then Return "INMTUID"
+    When key = "1011" Then Return "INMFNODE"
+    When key = "1012" Then Return "INMFUID"
+    When key = "1022" Then Return "INMCREAT"
+    When key = "1024" Then Return "INMFTIME"
+    When key = "1028" Then Return "INMUTILN"
+    When key = "102A" Then Return "INMRECCT"
+    When key = "102C" Then Return "INMSIZE"
+    When key = "102F" Then Return "INMNUMF"
+    Otherwise Return "INM"
+  End
+
+Dsorg: Procedure
+  Parse Arg hx
+  s = X2c(hx)
+  If Length(s) < 2 Then Return C2x(s)
+  t = ""
+  If Bitand(s, "0200"x) \= "0000"x Then t = t"PO "
+  If Bitand(s, "4000"x) \= "0000"x Then t = t"PS "
+  If Bitand(s, "0008"x) \= "0000"x Then t = t"VSAM "
+  If t = "" Then t = "X'"C2x(s)"'"
+  Return Strip(t)
+
+Recfm: Procedure
+  Parse Arg hx
+  s = X2c(hx)
+  If Length(s) < 2 Then Return C2x(s)
+  fmt = Bitand(s, "C000"x)
+  If fmt = "8000"x Then r = "F"
+  Else If fmt = "4000"x Then r = "V"
+  Else If fmt = "C000"x Then r = "U"
+  Else r = "X'"C2x(s)"'"
+  If Bitand(s, "1000"x) = "1000"x & Left(r, 1) \= "X" Then r = r"B"
+  If Bitand(s, "0800"x) = "0800"x & Left(r, 1) = "V" Then r = r"S"
+  If Bitand(s, "0400"x) = "0400"x & Left(r, 1) \= "X" Then r = r"A"
+  If Bitand(s, "0200"x) = "0200"x & Left(r, 1) \= "X" Then r = r"M"
+  Return r
+
+ShowTime: Procedure
+  Parse Arg hx
+  val = X2c(hx)
+  If Length(val) \= 8 Then Do
+    If Printable(C2x(val)) Then Return Strip(val)
+    Return C2x(val)
+  End
+  dat = Packed(C2x(Substr(val, 5, 4)))
+  hun = Unsigned(C2x(Substr(val, 1, 4)))
+  If dat = "" Then Do
+    dat = Packed(C2x(Substr(val, 1, 4)))
+    hun = Unsigned(C2x(Substr(val, 5, 4)))
+  End
+  If dat = "" Then Return C2x(val)
+  Return dat Clock(hun)
+
+Clock: Procedure
+  Parse Arg hun
+  If \Datatype(hun, "W") Then Return ""
+  If hun < 0 | hun >= 8640000 Then Return ""
+  total = hun % 100
+  hs = hun // 100
+  h = total % 3600
+  m = (total // 3600) % 60
+  s = total // 60
+  Return Right(h, 2, "0")":"Right(m, 2, "0")":" || ,
+    Right(s, 2, "0")"."Right(hs, 2, "0")
+
+Packed: Procedure
+  Parse Arg hx
+  s = X2c(hx)
+  If Length(s) < 4 Then Return ""
+  x = C2x(s)
+  sign = Substr(x, 8, 1)
+  If sign \= "F" & sign \= "C" & sign \= "D" Then Return ""
+  If Substr(x, 1, 1) \= "0" Then Return ""
+  c = X2d(Substr(x, 2, 1))
+  yy = X2d(Substr(x, 3, 2))
+  ddd = X2d(Substr(x, 5, 3))
+  If ddd < 1 | ddd > 366 Then Return ""
+  Return Julian(1900 + c * 100 + yy, ddd)
+
+Julian: Procedure
+  Parse Arg year, ddd
+  md.1 = 31
+  md.2 = 28
+  md.3 = 31
+  md.4 = 30
+  md.5 = 31
+  md.6 = 30
+  md.7 = 31
+  md.8 = 31
+  md.9 = 30
+  md.10 = 31
+  md.11 = 30
+  md.12 = 31
+  leap = 0
+  If year // 400 = 0 Then leap = 1
+  Else If year // 100 \= 0 & year // 4 = 0 Then leap = 1
+  If leap Then md.2 = 29
+  left = ddd
+  Do mo = 1 To 12
+    If left <= md.mo Then Do
+      Return Right(year, 4, "0")"-"Right(mo, 2, "0")"-" || ,
+        Right(left, 2, "0")
+    End
+    left = left - md.mo
+  End
+  Return ""
+
+Unsigned: Procedure
+  Parse Arg hx
+  s = X2c(hx)
+  n = 0
+  Do ui = 1 To Length(s)
+    n = n * 256 + C2d(Substr(s, ui, 1))
+  End
+  Return n
+
+Printable: Procedure
+  Parse Arg hx
+  s = X2c(hx)
+  If s = "" Then Return 0
+  Do pi = 1 To Length(s)
+    If C2d(Substr(s, pi, 1)) < 64 Then Return 0
+  End
+  Return 1
+
+Mostly: Procedure Expose probe
+  If probe = "" Then Return 0
+  ok = 0
+  Do mi = 1 To Length(probe)
+    If C2d(Substr(probe, mi, 1)) >= 64 Then ok = ok + 1
+  End
+  If ok * 100 >= Length(probe) * 85 Then Return 1
+  Return 0
+
+CleanPass: Procedure Expose pass
+  out = ""
+  Do ci = 1 To Length(pass)
+    If C2d(Substr(pass, ci, 1)) < 64 Then out = out || "."
+    Else out = out || Substr(pass, ci, 1)
+  End
+  Return Strip(out, "T")
+
+AddWarn:
+  Parse Arg txt
+  If warn.0 >= 20 Then Return
+  warn.0 = warn.0 + 1
+  n = warn.0
+  warn.n = txt
+  Return
+
+Confirm:
+  Parse Arg zmsg1, zmsg2
+  zans = ""
+  zcmd = ""
+  Address ISPEXEC "ADDPOP"
+  Address ISPEXEC "DISPLAY PANEL(XMITCONF)"
+  crc = rc
+  Address ISPEXEC "REMPOP"
+  If crc >= 8 Then Return 0
+  If Translate(Strip(zans)) = "YES" Then Return 1
+  Return 0
+
+Tell:
+  Parse Arg id, alarm, short, long
+  xdetail = long
+  zedsmsg = Left(short, 24)
+  zedlmsg = Left(long, 78)
+  If libm Then Do
+    Address ISPEXEC "SETMSG MSG("id")"
+    If rc <= 4 Then Return
+  End
+  If alarm Then Address ISPEXEC "SETMSG MSG(ISRZ001)"
+  Else Address ISPEXEC "SETMSG MSG(ISRZ000)"
+  Return
+
+ValidName:
+  Parse Arg full
+  full = Translate(Strip(full))
+  If Pos("(", full) = 0 Then Return ValidDsn(full)
+  Parse Var full dsn "(" mem ")" extra
+  If extra \= "" Then Return 0
+  Return ValidDsn(dsn) & ValidMem(Strip(mem))
+
+ValidDsn:
+  Parse Arg dsn
+  dsn = Translate(Strip(dsn))
+  If dsn = "" | Length(dsn) > 44 Then Return 0
+  Do While dsn \= ""
+    Parse Var dsn qual "." dsn
+    If \ValidQual(qual) Then Return 0
+  End
+  Return 1
+
+ValidQual:
+  Parse Arg q
+  q = Translate(Strip(q))
+  If q = "" | Length(q) > 8 Then Return 0
+  ok = "ABCDEFGHIJKLMNOPQRSTUVWXYZ@#$0123456789-"
+  If Verify(q, ok) \= 0 Then Return 0
+  lead = "ABCDEFGHIJKLMNOPQRSTUVWXYZ@#$"
+  If Verify(Left(q, 1), lead) \= 0 Then Return 0
+  Return 1
+
+ValidMem:
+  Parse Arg q
+  Return ValidQual(q)
+
+ValidMems:
+  Parse Arg list
+  list = Space(Translate(list), 0)
+  If list = "" | list = "*" Then Return 1
+  Do While list \= ""
+    Parse Var list one "," list
+    If \ValidMem(one) Then Return 0
+  End
+  Return 1
+
+StripStar:
+  Parse Arg s
+  out = ""
+  Do i = 1 To Length(s)
+    ch = Substr(s, i, 1)
+    If ch \= "*" & ch \= "%" Then out = out || ch
+  End
+  Do While Right(out, 1) = "."
+    out = Left(out, Length(out) - 1)
+  End
+  Return out
+
+OnSyntax:
+  zedsmsg = Left("Syntax error" rc, 24)
+  zedlmsg = Left("Line" sigl errortext(rc), 78)
+  Address ISPEXEC "SETMSG MSG(ISRZ001)"
+  Exit 16

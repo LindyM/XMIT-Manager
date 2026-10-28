@@ -1,0 +1,13 @@
+)ATTR DEFAULT(%+_)
+ @ TYPE(INPUT) INTENS(HIGH) CAPS(ON) COLOR(YELLOW)
+)BODY WINDOW(68,9)
+%Confirm -------------------------------------------- XMITMGR
+%
++&ZMSG1
++&ZMSG2
+%
++Type YES to continue. PF3 cancels.
++Reply     %===>@ZANS   +
+)INIT
+ .CURSOR = ZANS
+)END
