@@ -1,4 +1,4 @@
-#XMIT Manager for z/OS
+# XMIT Manager for z/OS
 =====================
 
 ISPF dialog that lists, creates, views, and extracts TSO TRANSMIT
